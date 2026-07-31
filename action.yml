@@ -1,0 +1,201 @@
+name: Froozeify's Changelog Updater (gCu)
+description: >
+  Automatically maintains a Keep a Changelog CHANGELOG.md: appends an entry under [Unreleased]
+  for each merged pull request (categorized by its labels), and promotes [Unreleased] to a
+  dated version section when a release is published.
+author: froozeify
+
+branding:
+  icon: book-open
+  color: orange
+
+inputs:
+  mode:
+    description: >
+      What to do. "auto" (the default) resolves from the triggering event: add-unreleased on a
+      pull_request/pull_request_target event, promote-unreleased on a release event. Set
+      explicitly to "add-unreleased" or "promote-unreleased" to override.
+    required: false
+    default: auto
+
+  version:
+    description: >
+      The version string to use when promoting (ignored for add-unreleased). Defaults to the
+      triggering release's tag_name, falling back to github.ref_name. A leading 'v' prefix is
+      automatically stripped.
+    required: false
+    default: ${{ github.event.release.tag_name || github.ref_name }}
+
+  pr-number:
+    description: >
+      The pull request number to add (add-unreleased mode only). Defaults to the pull request
+      that triggered the workflow; only needed when calling this action outside a pull_request
+      event.
+    required: false
+    default: ${{ github.event.pull_request.number }}
+
+  changelog-file:
+    description: Path to the changelog file to maintain.
+    required: false
+    default: CHANGELOG.md
+
+  label-mapping:
+    description: >
+      How pull request labels map to Keep a Changelog categories. One rule per line, in the
+      format:  Category=label1,label2
+      Example:
+        Added=enhancement,feature
+        Fixed=fix,bug
+      Defaults to a mapping derived from the labels used in GitHub's default release.yml
+      categories (enhancement/feature -> Added, fix/bug -> Fixed, everything else -> Changed).
+    required: false
+    default: ''
+
+  default-category:
+    description: >
+      Category to file a pull request under when none of its labels match label-mapping.
+      Set to an empty string to skip unlabeled/unmatched pull requests entirely.
+    required: false
+    default: Changed
+
+  exclude-labels:
+    description: Comma-separated labels that exclude a pull request from the changelog entirely.
+    required: false
+    default: ignore-for-release
+
+  category-order:
+    description: Comma-separated Keep a Changelog category order.
+    required: false
+    default: Added,Changed,Deprecated,Removed,Fixed,Security
+
+  entry-template:
+    description: >
+      Template for each changelog bullet. Placeholders: {title} {number} {author} {url}.
+      {number} must appear somewhere in the template (as text, e.g. "#{number}") for
+      add-unreleased mode to recognize an already-added PR on re-runs — removing it will
+      cause the same PR to be added twice.
+    required: false
+    default: '- {title} (#{number})'
+
+  note-marker:
+    description: >
+      A PR author/maintainer can write a line starting with this marker in the pull request
+      description (e.g. "Changelog: Fix broken item") to use that text instead of the
+      PR title for the changelog entry. Case-insensitive. Set to an empty string to disable.
+    required: false
+    default: 'Changelog:'
+
+  skip-prerelease:
+    description: >
+      When true, promote-unreleased does nothing on a pre-release event. Drafts never reach
+      this action at all — GitHub only fires "published" once a release leaves draft state —
+      but a published pre-release still fires "published", so this input is what filters those out.
+    required: false
+    default: 'true'
+
+  skip-if-empty:
+    description: >
+      When true, skip promoting (and skip the commit) if [Unreleased] would be empty.
+    required: false
+    default: 'true'
+
+  keep-unreleased:
+    description: >
+      After promoting [Unreleased] to a version on release, open a fresh empty [Unreleased]
+      section above it. Set to "false" to drop it (matching plugins that omit [Unreleased]
+      between releases).
+    required: false
+    default: 'true'
+
+  date:
+    description: Date to stamp the version section with (YYYY-MM-DD). Defaults to today (UTC).
+    required: false
+    default: ''
+
+  commit:
+    description: Whether to commit and push the updated changelog file.
+    required: false
+    default: 'true'
+
+  commit-message:
+    description: >
+      Commit message template. Placeholders {version} and {number} are substituted depending
+      on the mode.
+    required: false
+    default: ''
+
+  commit-branch:
+    description: The branch to push the changelog commit to.
+    required: false
+    default: main
+
+  commit-author-name:
+    description: The git author name for the changelog commit.
+    required: false
+    default: froozeify-gh-changelog-updater
+
+  commit-author-email:
+    description: The git author email for the changelog commit.
+    required: false
+    default: froozeify-gh-changelog-updater[bot]@users.noreply.github.com
+
+  token:
+    description: >
+      GitHub token used to read the pull request and push the commit. Needs 'contents: write'.
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  version:
+    description: The clean version number involved (empty for add-unreleased).
+    value: ${{ steps.run.outputs.version }}
+
+  changelog-file:
+    description: The changelog file path that was processed.
+    value: ${{ steps.run.outputs.changelog-file }}
+
+  updated:
+    description: Whether the changelog file was actually modified.
+    value: ${{ steps.run.outputs.updated }}
+
+  entries-count:
+    description: Number of changelog entries written in this run.
+    value: ${{ steps.run.outputs.entries-count }}
+
+  section:
+    description: The full rendered changelog file content after this run.
+    value: ${{ steps.run.outputs.section }}
+
+runs:
+  using: composite
+  steps:
+    - name: Update changelog
+      id: run
+      uses: actions/github-script@v9
+      env:
+        INPUT_MODE: ${{ inputs.mode }}
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_PR_NUMBER: ${{ inputs.pr-number }}
+        INPUT_CHANGELOG_FILE: ${{ inputs.changelog-file }}
+        INPUT_LABEL_MAPPING: ${{ inputs.label-mapping }}
+        INPUT_DEFAULT_CATEGORY: ${{ inputs.default-category }}
+        INPUT_EXCLUDE_LABELS: ${{ inputs.exclude-labels }}
+        INPUT_CATEGORY_ORDER: ${{ inputs.category-order }}
+        INPUT_ENTRY_TEMPLATE: ${{ inputs.entry-template }}
+        INPUT_NOTE_MARKER: ${{ inputs.note-marker }}
+        INPUT_SKIP_PRERELEASE: ${{ inputs.skip-prerelease }}
+        INPUT_SKIP_IF_EMPTY: ${{ inputs.skip-if-empty }}
+        INPUT_KEEP_UNRELEASED: ${{ inputs.keep-unreleased }}
+        INPUT_DATE: ${{ inputs.date }}
+        INPUT_COMMIT: ${{ inputs.commit }}
+        INPUT_COMMIT_MESSAGE: ${{ inputs.commit-message }}
+        INPUT_COMMIT_BRANCH: ${{ inputs.commit-branch }}
+        INPUT_COMMIT_AUTHOR_NAME: ${{ inputs.commit-author-name }}
+        INPUT_COMMIT_AUTHOR_EMAIL: ${{ inputs.commit-author-email }}
+        INPUT_TOKEN: ${{ inputs.token }}
+        INPUT_ACTION_REF: ${{ github.action_ref }}
+      with:
+        github-token: ${{ inputs.token }}
+        script: |
+          const run = require(`${process.env.GITHUB_ACTION_PATH}/src/index.js`)
+          await run({ github, context, core, exec })

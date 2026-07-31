@@ -1,0 +1,16 @@
+name: Update semver tags
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  update-semver:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Update major and minor tags
+        uses: froozeify/gh-release-semver-autotag@v1
+        with:
+          mode: prefix

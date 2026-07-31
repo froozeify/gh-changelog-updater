@@ -1,0 +1,25 @@
+name: Changelog
+
+on:
+  pull_request_target:
+    types: [ closed ]
+  release:
+    types: [ published ]
+
+permissions:
+  contents: write
+
+jobs:
+  update-changelog:
+    if: github.event_name == 'release' || github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Dogfooding: this repo IS the action, so it's referenced by local path
+      # instead of `froozeify/gh-changelog-updater@v1`. mode: auto resolves
+      # add-unreleased vs. promote-unreleased from the triggering event.
+      - uses: ./
