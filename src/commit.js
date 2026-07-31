@@ -5,27 +5,31 @@
 'use strict';
 
 async function commitAndPush({ exec, core, file, commitMessage, commitBranch, authorName, authorEmail, token }) {
-  await exec.exec('git', ['config', '--local', 'user.name', authorName]);
-  await exec.exec('git', ['config', '--local', 'user.email', authorEmail]);
-  await exec.exec('git', ['add', '--', file]);
-
-  // git diff --cached --quiet exits 0 when there is nothing staged.
-  const diffExit = await exec.exec('git', ['diff', '--cached', '--quiet'], { ignoreReturnCode: true });
-  if (diffExit === 0) {
-    core.info(`Nothing to commit — ${file} is already up to date.`);
-    return { committed: false };
-  }
-
-  await exec.exec('git', ['commit', '--message', commitMessage]);
-
+  // Read-only and independent of the add/diff/commit sequence below, so it can run
+  // concurrently instead of after the commit.
   let remoteUrl = '';
-  await exec.exec('git', ['remote', 'get-url', 'origin'], {
+  const remoteUrlPromise = exec.exec('git', ['remote', 'get-url', 'origin'], {
     listeners: {
       stdout: (data) => {
         remoteUrl += data.toString();
       },
     },
   });
+
+  await exec.exec('git', ['add', '--', file]);
+
+  // git diff --cached --quiet exits 0 when there is nothing staged.
+  const diffExit = await exec.exec('git', ['diff', '--cached', '--quiet'], { ignoreReturnCode: true });
+  if (diffExit === 0) {
+    await remoteUrlPromise;
+    core.info(`Nothing to commit — ${file} is already up to date.`);
+    return { committed: false };
+  }
+
+  // Author/email set via -c instead of separate `git config` calls, saving two subprocess spawns.
+  await exec.exec('git', ['-c', `user.name=${authorName}`, '-c', `user.email=${authorEmail}`, 'commit', '--message', commitMessage]);
+
+  await remoteUrlPromise;
   remoteUrl = remoteUrl.trim();
 
   // Inject the token into the remote URL for an authenticated push.

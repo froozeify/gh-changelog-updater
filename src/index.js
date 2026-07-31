@@ -33,11 +33,7 @@ function stripV(v) {
 }
 
 function todayUTC() {
-  const now = new Date();
-  const y = now.getUTCFullYear();
-  const m = String(now.getUTCMonth() + 1).padStart(2, '0');
-  const d = String(now.getUTCDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
+  return new Date().toISOString().slice(0, 10);
 }
 
 function renderTemplate(template, vars) {
@@ -146,7 +142,7 @@ async function run({ github, context, core, exec }) {
   core.info(`Mode: ${mode}`);
 
   const rawContent = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
-  const parsed = changelogLib.parseOrCreate(rawContent);
+  const parsed = changelogLib.parse(rawContent);
 
   let entries = [];
   let version = '';
@@ -182,40 +178,36 @@ async function run({ github, context, core, exec }) {
     return;
   }
 
-  if (!hasChanges) {
-    core.info('No changelog changes to write.');
-    await summaryLib.writeSummary({ core, mode, file, version, entries: [], committed: false, commitBranch, actionRef });
-    core.setOutput('version', version);
-    core.setOutput('changelog-file', file);
-    core.setOutput('updated', 'false');
-    core.setOutput('entries-count', '0');
-    return;
-  }
-
-  const newContent = changelogLib.render(parsed);
-  fs.writeFileSync(file, newContent, 'utf8');
-  core.info(`Wrote ${file}`);
-
+  let newContent = '';
   let committed = false;
-  if (doCommit) {
-    const result = await commitLib.commitAndPush({
-      exec,
-      core,
-      file,
-      commitMessage,
-      commitBranch,
-      authorName: env('INPUT_COMMIT_AUTHOR_NAME', 'froozeify-gh-changelog-updater'),
-      authorEmail: env('INPUT_COMMIT_AUTHOR_EMAIL', 'froozeify-gh-changelog-updater[bot]@users.noreply.github.com'),
-      token,
-    });
-    committed = result.committed;
+
+  if (hasChanges) {
+    newContent = changelogLib.render(parsed);
+    fs.writeFileSync(file, newContent, 'utf8');
+    core.info(`Wrote ${file}`);
+
+    if (doCommit) {
+      const result = await commitLib.commitAndPush({
+        exec,
+        core,
+        file,
+        commitMessage,
+        commitBranch,
+        authorName: env('INPUT_COMMIT_AUTHOR_NAME', 'froozeify-gh-changelog-updater'),
+        authorEmail: env('INPUT_COMMIT_AUTHOR_EMAIL', 'froozeify-gh-changelog-updater[bot]@users.noreply.github.com'),
+        token,
+      });
+      committed = result.committed;
+    }
+  } else {
+    core.info('No changelog changes to write.');
   }
 
   await summaryLib.writeSummary({ core, mode, file, version, entries, committed, commitBranch, actionRef });
 
   core.setOutput('version', version);
   core.setOutput('changelog-file', file);
-  core.setOutput('updated', 'true');
+  core.setOutput('updated', String(hasChanges));
   core.setOutput('entries-count', String(entries.length));
   core.setOutput('section', newContent);
 }

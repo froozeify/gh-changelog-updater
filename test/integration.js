@@ -1,3 +1,9 @@
+// test/integration.js — exercises src/index.js end-to-end (env parsing, mode resolution,
+// file I/O) against mocked GitHub Actions primitives. commit is disabled (no real git repo
+// here) so this focuses on everything up to "what would be written to disk".
+//
+// Run with: node test/integration.js
+
 'use strict';
 
 const assert = require('assert');
@@ -56,26 +62,41 @@ function freshIndex() {
   return require('../src/index.js');
 }
 
+// A pull_request_target context for a PR against acme/widget. `pr` fields are merged over
+// sensible defaults (merged, no labels/body) — pass only what a given test cares about.
+function makePrContext(pr) {
+  return {
+    eventName: 'pull_request_target',
+    repo: { owner: 'acme', repo: 'widget' },
+    payload: {
+      pull_request: {
+        merged_at: '2026-07-31T00:00:00Z',
+        labels: [],
+        html_url: `https://github.com/acme/widget/pull/${pr.number}`,
+        ...pr,
+      },
+    },
+  };
+}
+
+function makeReleaseContext(release) {
+  return { eventName: 'release', repo: { owner: 'acme', repo: 'widget' }, payload: { release } };
+}
+
+// Writes CHANGELOG.md with the standard preamble followed by `body` (already-joined lines).
+function seedChangelog(body) {
+  fs.writeFileSync(
+    'CHANGELOG.md',
+    ['# Change Log', '', 'All notable changes to this project will be documented in this file.', '', body].join('\n'),
+  );
+}
+
 test('add-unreleased: merged PR with an "enhancement" label is filed under Added', () =>
   withTempDir(async () => {
     setEnv({ INPUT_COMMIT: 'false' });
     const run = freshIndex();
     const core = makeCore();
-
-    const context = {
-      eventName: 'pull_request_target',
-      repo: { owner: 'acme', repo: 'widget' },
-      payload: {
-        pull_request: {
-          number: 42,
-          title: 'Add URL field type',
-          merged_at: '2026-07-31T00:00:00Z',
-          labels: [{ name: 'enhancement' }],
-          user: { login: 'octocat' },
-          html_url: 'https://github.com/acme/widget/pull/42',
-        },
-      },
-    };
+    const context = makePrContext({ number: 42, title: 'Add URL field type', labels: [{ name: 'enhancement' }] });
 
     await run({ github: {}, context, core, exec: {} });
 
@@ -92,19 +113,12 @@ test('add-unreleased: unmerged PR is a no-op', () =>
     setEnv({ INPUT_COMMIT: 'false' });
     const run = freshIndex();
     const core = makeCore();
-
-    const context = {
-      eventName: 'pull_request_target',
-      repo: { owner: 'acme', repo: 'widget' },
-      payload: {
-        pull_request: {
-          number: 7,
-          title: 'Some closed-not-merged PR',
-          merged_at: null,
-          labels: [{ name: 'enhancement' }],
-        },
-      },
-    };
+    const context = makePrContext({
+      number: 7,
+      title: 'Some closed-not-merged PR',
+      merged_at: null,
+      labels: [{ name: 'enhancement' }],
+    });
 
     await run({ github: {}, context, core, exec: {} });
 
@@ -115,22 +129,9 @@ test('add-unreleased: unmerged PR is a no-op', () =>
 test('add-unreleased: re-running the same merged PR is idempotent', () =>
   withTempDir(async () => {
     setEnv({ INPUT_COMMIT: 'false' });
-    const core1 = makeCore();
-    const context = {
-      eventName: 'pull_request_target',
-      repo: { owner: 'acme', repo: 'widget' },
-      payload: {
-        pull_request: {
-          number: 42,
-          title: 'Add URL field type',
-          merged_at: '2026-07-31T00:00:00Z',
-          labels: [{ name: 'enhancement' }],
-          html_url: 'https://github.com/acme/widget/pull/42',
-        },
-      },
-    };
+    const context = makePrContext({ number: 42, title: 'Add URL field type', labels: [{ name: 'enhancement' }] });
 
-    await freshIndex()({ github: {}, context, core: core1, exec: {} });
+    await freshIndex()({ github: {}, context, core: makeCore(), exec: {} });
     const core2 = makeCore();
     await freshIndex()({ github: {}, context, core: core2, exec: {} });
 
@@ -145,21 +146,12 @@ test('add-unreleased: "Changelog: ..." line in the PR body overrides the title',
     setEnv({ INPUT_COMMIT: 'false' });
     const run = freshIndex();
     const core = makeCore();
-
-    const context = {
-      eventName: 'pull_request_target',
-      repo: { owner: 'acme', repo: 'widget' },
-      payload: {
-        pull_request: {
-          number: 55,
-          title: 'PR-123: refactor internal thingamajig for the frobnicator',
-          body: 'Some PR description.\n\nChangelog: Fix crash when opening the settings page\n\nMore notes below.',
-          merged_at: '2026-07-31T00:00:00Z',
-          labels: [{ name: 'fix' }],
-          html_url: 'https://github.com/acme/widget/pull/55',
-        },
-      },
-    };
+    const context = makePrContext({
+      number: 55,
+      title: 'PR-123: refactor internal thingamajig for the frobnicator',
+      body: 'Some PR description.\n\nChangelog: Fix crash when opening the settings page\n\nMore notes below.',
+      labels: [{ name: 'fix' }],
+    });
 
     await run({ github: {}, context, core, exec: {} });
 
@@ -173,21 +165,12 @@ test('add-unreleased: no "Changelog:" line in the PR body falls back to the titl
     setEnv({ INPUT_COMMIT: 'false' });
     const run = freshIndex();
     const core = makeCore();
-
-    const context = {
-      eventName: 'pull_request_target',
-      repo: { owner: 'acme', repo: 'widget' },
-      payload: {
-        pull_request: {
-          number: 56,
-          title: 'Fix the login bug',
-          body: 'Just a plain description with no marker.',
-          merged_at: '2026-07-31T00:00:00Z',
-          labels: [{ name: 'fix' }],
-          html_url: 'https://github.com/acme/widget/pull/56',
-        },
-      },
-    };
+    const context = makePrContext({
+      number: 56,
+      title: 'Fix the login bug',
+      body: 'Just a plain description with no marker.',
+      labels: [{ name: 'fix' }],
+    });
 
     await run({ github: {}, context, core, exec: {} });
 
@@ -198,19 +181,7 @@ test('add-unreleased: no "Changelog:" line in the PR body falls back to the titl
 test('add-unreleased: a manually edited entry is preserved on re-run (PR number kept)', () =>
   withTempDir(async () => {
     setEnv({ INPUT_COMMIT: 'false' });
-    const context = {
-      eventName: 'pull_request_target',
-      repo: { owner: 'acme', repo: 'widget' },
-      payload: {
-        pull_request: {
-          number: 42,
-          title: 'Add URL field type',
-          merged_at: '2026-07-31T00:00:00Z',
-          labels: [{ name: 'enhancement' }],
-          html_url: 'https://github.com/acme/widget/pull/42',
-        },
-      },
-    };
+    const context = makePrContext({ number: 42, title: 'Add URL field type', labels: [{ name: 'enhancement' }] });
 
     await freshIndex()({ github: {}, context, core: makeCore(), exec: {} });
 
@@ -234,39 +205,14 @@ test('add-unreleased: a manually edited entry is preserved on re-run (PR number 
 test('add-unreleased: a fully hand-written line (no PR marker at all) is left untouched', () =>
   withTempDir(async () => {
     // A maintainer writes their own line directly into CHANGELOG.md — not tied to any PR.
-    fs.writeFileSync(
-      'CHANGELOG.md',
-      [
-        '# Change Log',
-        '',
-        'All notable changes to this project will be documented in this file.',
-        '',
-        '## [Unreleased]',
-        '',
-        '### Changed',
-        '',
-        '- Bumped internal infra, nothing user-facing but worth a note.',
-        '',
-      ].join('\n'),
+    seedChangelog(
+      ['## [Unreleased]', '', '### Changed', '', '- Bumped internal infra, nothing user-facing but worth a note.', ''].join('\n'),
     );
 
     setEnv({ INPUT_COMMIT: 'false' });
     const run = freshIndex();
     const core = makeCore();
-
-    const context = {
-      eventName: 'pull_request_target',
-      repo: { owner: 'acme', repo: 'widget' },
-      payload: {
-        pull_request: {
-          number: 90,
-          title: 'Add dark mode toggle',
-          merged_at: '2026-07-31T00:00:00Z',
-          labels: [{ name: 'enhancement' }],
-          html_url: 'https://github.com/acme/widget/pull/90',
-        },
-      },
-    };
+    const context = makePrContext({ number: 90, title: 'Add dark mode toggle', labels: [{ name: 'enhancement' }] });
 
     await run({ github: {}, context, core, exec: {} });
 
@@ -279,34 +225,14 @@ test('add-unreleased: a fully hand-written line (no PR marker at all) is left un
 
 test('promote-unreleased: cuts [Unreleased] into a dated version on a release event', () =>
   withTempDir(async () => {
-    fs.writeFileSync(
-      'CHANGELOG.md',
-      [
-        '# Change Log',
-        '',
-        'All notable changes to this project will be documented in this file.',
-        '',
-        'The format is based on [Keep a Changelog](http://keepachangelog.com/)',
-        'and this project adheres to [Semantic Versioning](http://semver.org/).',
-        '',
-        '## [Unreleased]',
-        '',
-        '### Added',
-        '',
-        '- Add URL field type (#42)',
-        '',
-      ].join('\n'),
+    seedChangelog(
+      ['## [Unreleased]', '', '### Added', '', '- Add URL field type (#42)', ''].join('\n'),
     );
 
     setEnv({ INPUT_COMMIT: 'false', INPUT_DATE: '2026-07-31' });
     const run = freshIndex();
     const core = makeCore();
-
-    const context = {
-      eventName: 'release',
-      repo: { owner: 'acme', repo: 'widget' },
-      payload: { release: { tag_name: 'v1.25.0' } },
-    };
+    const context = makeReleaseContext({ tag_name: 'v1.25.0' });
 
     await run({ github: {}, context, core, exec: {} });
 
@@ -320,20 +246,12 @@ test('promote-unreleased: cuts [Unreleased] into a dated version on a release ev
 
 test('promote-unreleased: skips when [Unreleased] is empty (skip-if-empty default true)', () =>
   withTempDir(async () => {
-    fs.writeFileSync(
-      'CHANGELOG.md',
-      ['# Change Log', '', 'All notable changes to this project will be documented in this file.', '', '## [Unreleased]', ''].join('\n'),
-    );
+    seedChangelog('## [Unreleased]\n');
 
     setEnv({ INPUT_COMMIT: 'false' });
     const run = freshIndex();
     const core = makeCore();
-
-    const context = {
-      eventName: 'release',
-      repo: { owner: 'acme', repo: 'widget' },
-      payload: { release: { tag_name: 'v1.0.0' } },
-    };
+    const context = makeReleaseContext({ tag_name: 'v1.0.0' });
 
     await run({ github: {}, context, core, exec: {} });
 
@@ -342,31 +260,14 @@ test('promote-unreleased: skips when [Unreleased] is empty (skip-if-empty defaul
 
 test('promote-unreleased: skips a pre-release by default (skip-prerelease default true)', () =>
   withTempDir(async () => {
-    fs.writeFileSync(
-      'CHANGELOG.md',
-      [
-        '# Change Log',
-        '',
-        'All notable changes to this project will be documented in this file.',
-        '',
-        '## [Unreleased]',
-        '',
-        '### Added',
-        '',
-        '- Add URL field type (#42)',
-        '',
-      ].join('\n'),
+    seedChangelog(
+      ['## [Unreleased]', '', '### Added', '', '- Add URL field type (#42)', ''].join('\n'),
     );
 
     setEnv({ INPUT_COMMIT: 'false', INPUT_DATE: '2026-07-31' });
     const run = freshIndex();
     const core = makeCore();
-
-    const context = {
-      eventName: 'release',
-      repo: { owner: 'acme', repo: 'widget' },
-      payload: { release: { tag_name: 'v1.25.0-beta.1', prerelease: true } },
-    };
+    const context = makeReleaseContext({ tag_name: 'v1.25.0-beta.1', prerelease: true });
 
     await run({ github: {}, context, core, exec: {} });
 
@@ -378,31 +279,14 @@ test('promote-unreleased: skips a pre-release by default (skip-prerelease defaul
 
 test('promote-unreleased: skip-prerelease=false still promotes a pre-release', () =>
   withTempDir(async () => {
-    fs.writeFileSync(
-      'CHANGELOG.md',
-      [
-        '# Change Log',
-        '',
-        'All notable changes to this project will be documented in this file.',
-        '',
-        '## [Unreleased]',
-        '',
-        '### Added',
-        '',
-        '- Add URL field type (#42)',
-        '',
-      ].join('\n'),
+    seedChangelog(
+      ['## [Unreleased]', '', '### Added', '', '- Add URL field type (#42)', ''].join('\n'),
     );
 
     setEnv({ INPUT_COMMIT: 'false', INPUT_DATE: '2026-07-31', INPUT_SKIP_PRERELEASE: 'false' });
     const run = freshIndex();
     const core = makeCore();
-
-    const context = {
-      eventName: 'release',
-      repo: { owner: 'acme', repo: 'widget' },
-      payload: { release: { tag_name: 'v1.25.0-beta.1', prerelease: true } },
-    };
+    const context = makeReleaseContext({ tag_name: 'v1.25.0-beta.1', prerelease: true });
 
     await run({ github: {}, context, core, exec: {} });
 

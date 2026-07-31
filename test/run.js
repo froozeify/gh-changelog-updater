@@ -49,7 +49,7 @@ test('parse extracts version headings, dates, categories and bullets', () => {
 // ---------------------------------------------------------------------------
 
 test('addBullet creates [Unreleased] + category on an empty file with the fields preamble', () => {
-  const parsed = changelog.parseOrCreate('');
+  const parsed = changelog.parse('');
   const section = changelog.ensureUnreleased(parsed);
   changelog.addBullet(section, 'Added', 'New URL field type (#123)', labels.DEFAULT_CATEGORY_ORDER, '(#123)');
 
@@ -71,7 +71,7 @@ test('addBullet on an existing file inserts [Unreleased] above the newest versio
 });
 
 test('addBullet is idempotent for a duplicate PR ref', () => {
-  const parsed = changelog.parseOrCreate('');
+  const parsed = changelog.parse('');
   const section = changelog.ensureUnreleased(parsed);
   const first = changelog.addBullet(section, 'Added', 'Thing (#42)', labels.DEFAULT_CATEGORY_ORDER, '(#42)');
   const second = changelog.addBullet(section, 'Added', 'Thing (#42) — edited title', labels.DEFAULT_CATEGORY_ORDER, '(#42)');
@@ -82,7 +82,7 @@ test('addBullet is idempotent for a duplicate PR ref', () => {
 });
 
 test('ensureCategory respects category-order when inserting among existing categories', () => {
-  const parsed = changelog.parseOrCreate('');
+  const parsed = changelog.parse('');
   const section = changelog.ensureUnreleased(parsed);
   changelog.addBullet(section, 'Fixed', 'A fix (#1)', labels.DEFAULT_CATEGORY_ORDER, '(#1)');
   changelog.addBullet(section, 'Added', 'A feature (#2)', labels.DEFAULT_CATEGORY_ORDER, '(#2)');
@@ -98,7 +98,7 @@ test('ensureCategory respects category-order when inserting among existing categ
 // ---------------------------------------------------------------------------
 
 test('promote restamps [Unreleased] to a dated version section and opens a fresh one', () => {
-  const parsed = changelog.parseOrCreate('');
+  const parsed = changelog.parse('');
   const section = changelog.ensureUnreleased(parsed);
   changelog.addBullet(section, 'Added', 'New URL field type (#123)', labels.DEFAULT_CATEGORY_ORDER, '(#123)');
 
@@ -114,7 +114,7 @@ test('promote restamps [Unreleased] to a dated version section and opens a fresh
 });
 
 test('promote without keep-unreleased drops the [Unreleased] heading entirely', () => {
-  const parsed = changelog.parseOrCreate('');
+  const parsed = changelog.parse('');
   const section = changelog.ensureUnreleased(parsed);
   changelog.addBullet(section, 'Fixed', 'Some fix (#7)', labels.DEFAULT_CATEGORY_ORDER, '(#7)');
   changelog.promote(parsed, '2.0.0', '2026-08-01', false);
@@ -125,7 +125,7 @@ test('promote without keep-unreleased drops the [Unreleased] heading entirely', 
 });
 
 test('promote reports hadContent=false for an empty [Unreleased]', () => {
-  const parsed = changelog.parseOrCreate('');
+  const parsed = changelog.parse('');
   changelog.ensureUnreleased(parsed);
   const result = changelog.promote(parsed, '1.0.0', '2026-08-01', true);
   assert.strictEqual(result.hadContent, false);

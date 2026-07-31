@@ -64,11 +64,6 @@ function parse(content) {
   return { preambleLines, sections };
 }
 
-// Render an empty/missing file (or `parse('')`) into a brand-new changelog.
-function parseOrCreate(content) {
-  return parse(content);
-}
-
 function headingFor(section) {
   if (section.label === 'Unreleased') return '## [Unreleased]';
   return `## [${section.label}] - ${section.date}`;
@@ -172,9 +167,7 @@ function promote(parsed, version, date, keepUnreleased) {
 module.exports = {
   DEFAULT_PREAMBLE,
   parse,
-  parseOrCreate,
   render,
-  findSectionIndex,
   ensureUnreleased,
   ensureCategory,
   hasBulletRef,
