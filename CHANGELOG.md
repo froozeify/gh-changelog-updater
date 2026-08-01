@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/) and this p
 ### Fixed
 
 - Changelog typo (#4)
+- Switch to raw summaries so github can render the table correctly (#5)
 
 ## [1.0.0] - 2026-08-01
 
