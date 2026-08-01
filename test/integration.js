@@ -36,6 +36,7 @@ function makeCore() {
     addHeading: () => core.summary,
     addTable: () => core.summary,
     addList: () => core.summary,
+    addRaw: () => core.summary,
     write: async () => {},
   };
   return core;
