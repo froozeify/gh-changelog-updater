@@ -90,7 +90,7 @@ function makeReleaseContext(release) {
 function seedChangelog(body) {
   fs.writeFileSync(
     'CHANGELOG.md',
-    ['# Change Log', '', 'All notable changes to this project will be documented in this file.', '', body].join('\n'),
+    ['# Changelog', '', 'All notable changes to this project will be documented in this file.', '', body].join('\n'),
   );
 }
 
