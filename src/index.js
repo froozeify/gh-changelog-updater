@@ -102,9 +102,17 @@ async function runAddUnreleased({ github, context, core, parsed, categoryOrder, 
 
   // Dedup relies on the PR number appearing somewhere in the bullet's visible text (the
   // default entry-template includes it as "(#42)"). Custom templates must keep {number}
-  // in some form, or re-runs of the same PR will add a duplicate entry.
+  // in some form, or re-runs of the same PR will add a duplicate entry — warn since this
+  // otherwise fails silently.
+  const refToken = `#${pr.number}`;
+  if (!bullet.includes(refToken)) {
+    core.warning(
+      `entry-template doesn't include {number} — if this workflow run is ever re-triggered, PR #${pr.number}'s entry will be duplicated instead of recognized as already present.`,
+    );
+  }
+
   const section = changelogLib.ensureUnreleased(parsed);
-  const added = changelogLib.addBullet(section, category, bullet, categoryOrder, `#${pr.number}`);
+  const added = changelogLib.addBullet(section, category, bullet, categoryOrder, refToken);
 
   if (!added) core.info(`Entry for #${pr.number} already present — skipping (idempotent).`);
 
