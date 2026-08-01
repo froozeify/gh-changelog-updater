@@ -83,6 +83,31 @@ Changelog: Fix crash when opening the settings page
 
 Customize or disable the marker with the `note-marker` input (set it to `''` to turn this off).
 
+## Commit identity
+
+Commits are authored as `github-actions[bot]` — the real, GitHub-linked bot account behind `${{ github.token }}`.  
+By default (`commit-method: api`) they're also made through GitHub's `createCommitOnBranch` API, so GitHub signs them server-side and they show a green **Verified** badge; the author always matches whichever token you pass, regardless of
+`commit-author-name`/`commit-author-email`.
+
+### Committing as a GitHub App
+
+If you want commits attributed to your own bot (rather than generic `github-actions[bot]`), or you need to bypass branch protection, or you want the changelog commit to *trigger* other workflows (`GITHUB_TOKEN` pushes deliberately don't, to avoid infinite loops) — register your own GitHub App,
+install it on the repo, and mint a token for it with [`actions/create-github-app-token`](https://github.com/actions/create-github-app-token):
+
+```yaml
+- uses: actions/create-github-app-token@v3
+  id: app-token
+  with:
+    app-id: ${{ vars.APP_ID }}
+    private-key: ${{ secrets.APP_KEY }}
+
+- uses: froozeify/gh-changelog-updater@v1
+  with:
+    token: ${{ steps.app-token.outputs.token }}
+```
+
+With `commit-method: api` (the default) that's the whole change — the commit author follows the token automatically, so `commit-author-name`/`commit-author-email` don't need to be set.
+
 ## Inputs
 
 | Input                 | Required | Default                                                        | Description                                                                                                                                |
@@ -104,8 +129,9 @@ Customize or disable the marker with the `note-marker` input (set it to `''` to 
 | `commit`              | no       | `true`                                                         | Set to `false` to update the file without committing.                                                                                      |
 | `commit-message`      | no       | mode-dependent                                                 | `docs: add changelog entry for #{number}` (add) / `ci: update changelog for {version}` (promote).                                          |
 | `commit-branch`       | no       | `main`                                                         | Branch to push to.                                                                                                                         |
-| `commit-author-name`  | no       | `froozeify-gh-changelog-updater`                               | Git author name.                                                                                                                           |
-| `commit-author-email` | no       | `froozeify-gh-changelog-updater[bot]@users.noreply.github.com` | Git author email.                                                                                                                          |
+| `commit-method`       | no       | `api`                                                          | `api` commits via GitHub's `createCommitOnBranch` (signed, shows as Verified). `git` commits locally via `git commit`/`push` instead.      |
+| `commit-author-name`  | no       | `github-actions[bot]`                                          | Git author name. Only used when `commit-method: git`.                                                                                     |
+| `commit-author-email` | no       | `41898282+github-actions[bot]@users.noreply.github.com`        | Git author email. Only used when `commit-method: git`.                                                                                    |
 | `token`               | no       | `${{ github.token }}`                                          | Needs `contents: write`.                                                                                                                   |
 
 ## Outputs

@@ -36,6 +36,10 @@ function todayUTC() {
   return new Date().toISOString().slice(0, 10);
 }
 
+// Fixed constant, not an input: attributes a commit to this action in its body without needing
+// a fake author identity. Never versioned (no "@ref") so there's nothing to maintain as tags move.
+const TRAILER = 'Generated-by: froozeify/gh-changelog-updater';
+
 function renderTemplate(template, vars) {
   return template.replace(/\{(\w+)\}/g, (_, key) => (vars[key] !== undefined ? String(vars[key]) : `{${key}}`));
 }
@@ -72,7 +76,10 @@ function releaseOrRefVersion(context) {
   return String(context.ref || '').replace(/^refs\/(tags|heads)\//, '');
 }
 
-async function runAddUnreleased({ github, context, core, parsed, categoryOrder, labelMapping, excludeLabels, defaultCategory, entryTemplate, noteMarker }) {
+// Resolves everything that depends on the PR payload (async) but not on the changelog file's
+// current content, so the actual mutation can be re-run as a pure function against whichever
+// copy of the file (local checkout vs. freshly re-fetched remote) needs it — see applyAddUnreleased.
+async function resolveAddUnreleased({ github, context, core, categoryOrder, labelMapping, excludeLabels, defaultCategory, entryTemplate, noteMarker }) {
   let pr = context.payload.pull_request;
   const prNumberInput = env('INPUT_PR_NUMBER');
 
@@ -83,18 +90,18 @@ async function runAddUnreleased({ github, context, core, parsed, categoryOrder, 
 
   if (!pr) {
     core.setFailed('add-unreleased mode requires a pull_request(_target) event payload or the pr-number input.');
-    return { entries: [], added: false, prNumber: null };
+    return { ready: false, prNumber: null };
   }
 
   if (!(pr.merged_at || pr.merged)) {
     core.info(`PR #${pr.number} is not merged — skipping.`);
-    return { entries: [], added: false, prNumber: pr.number };
+    return { ready: false, prNumber: pr.number };
   }
 
   const category = labelsLib.categorize(pr.labels, { labelMapping, categoryOrder, excludeLabels, defaultCategory });
   if (!category) {
     core.info(`PR #${pr.number} has no matching/mapped label — skipping.`);
-    return { entries: [], added: false, prNumber: pr.number };
+    return { ready: false, prNumber: pr.number };
   }
 
   const note = extractChangelogNote(pr.body, noteMarker);
@@ -111,12 +118,36 @@ async function runAddUnreleased({ github, context, core, parsed, categoryOrder, 
     );
   }
 
+  return { ready: true, prNumber: pr.number, category, bullet, refToken, categoryOrder };
+}
+
+// Pure: parses rawContent fresh each call so it can be re-run against a re-fetched remote copy
+// on a commit conflict retry, not just the local checkout read at the top of run().
+function applyAddUnreleased(rawContent, { category, bullet, refToken, categoryOrder, core }) {
+  const parsed = changelogLib.parse(rawContent);
   const section = changelogLib.ensureUnreleased(parsed);
   const added = changelogLib.addBullet(section, category, bullet, categoryOrder, refToken);
 
-  if (!added) core.info(`Entry for #${pr.number} already present — skipping (idempotent).`);
+  if (!added && core) core.info(`Entry already present — skipping (idempotent).`);
 
-  return { entries: added ? [bullet] : [], added, prNumber: pr.number };
+  return { content: changelogLib.render(parsed), changed: added, entries: added ? [bullet] : [] };
+}
+
+// Pure, same reasoning as applyAddUnreleased above.
+function applyPromoteUnreleased(rawContent, { version, date, keepUnreleased, skipIfEmpty, core }) {
+  const parsed = changelogLib.parse(rawContent);
+  const result = changelogLib.promote(parsed, version, date, keepUnreleased);
+
+  if (!result) {
+    if (core) core.warning('No [Unreleased] section found — nothing to promote.');
+    return { content: rawContent, changed: false, entries: [] };
+  }
+  if (!result.hadContent && skipIfEmpty) {
+    if (core) core.warning('[Unreleased] section is empty — skipping promote.');
+    return { content: rawContent, changed: false, entries: [] };
+  }
+
+  return { content: changelogLib.render(parsed), changed: true, entries: [`Promoted [Unreleased] to ${version} (${date})`] };
 }
 
 async function run({ github, context, core, exec }) {
@@ -137,6 +168,7 @@ async function run({ github, context, core, exec }) {
   const date = env('INPUT_DATE') || todayUTC();
   const actionRef = env('INPUT_ACTION_REF');
   const commitBranch = env('INPUT_COMMIT_BRANCH', 'main');
+  const commitMethod = env('INPUT_COMMIT_METHOD', 'api');
 
   let mode = env('INPUT_MODE', 'auto');
   if (mode === 'auto') {
@@ -150,20 +182,19 @@ async function run({ github, context, core, exec }) {
   core.info(`Mode: ${mode}`);
 
   const rawContent = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
-  const parsed = changelogLib.parse(rawContent);
 
   let entries = [];
   let version = '';
   let hasChanges = false;
   let commitMessage;
   let prNumber = null;
+  let applyChange = null; // (rawContent) -> { content, changed, entries } — null when nothing to apply
 
   if (mode === 'add-unreleased') {
-    const result = await runAddUnreleased({ github, context, core, parsed, categoryOrder, labelMapping, excludeLabels, defaultCategory, entryTemplate, noteMarker });
-    entries = result.entries;
-    hasChanges = result.added;
-    prNumber = result.prNumber;
+    const resolved = await resolveAddUnreleased({ github, context, core, categoryOrder, labelMapping, excludeLabels, defaultCategory, entryTemplate, noteMarker });
+    prNumber = resolved.prNumber;
     commitMessage = renderTemplate(env('INPUT_COMMIT_MESSAGE', 'docs: add changelog entry for #{number}'), { number: prNumber, version });
+    if (resolved.ready) applyChange = (raw) => applyAddUnreleased(raw, { ...resolved, core });
   } else if (mode === 'promote-unreleased') {
     version = stripV(env('INPUT_VERSION', releaseOrRefVersion(context)));
     commitMessage = renderTemplate(env('INPUT_COMMIT_MESSAGE', 'ci: update changelog for {version}'), { version });
@@ -171,15 +202,7 @@ async function run({ github, context, core, exec }) {
     if (skipPrerelease && context.payload.release && context.payload.release.prerelease) {
       core.info(`Release ${version} is a pre-release — skipping promote (skip-prerelease: true).`);
     } else {
-      const result = changelogLib.promote(parsed, version, date, keepUnreleased);
-      if (!result) {
-        core.warning('No [Unreleased] section found — nothing to promote.');
-      } else if (!result.hadContent && skipIfEmpty) {
-        core.warning('[Unreleased] section is empty — skipping promote.');
-      } else {
-        hasChanges = true;
-        entries = [`Promoted [Unreleased] to ${version} (${date})`];
-      }
+      applyChange = (raw) => applyPromoteUnreleased(raw, { version, date, keepUnreleased, skipIfEmpty, core });
     }
   } else {
     core.setFailed(`Unknown mode: ${mode}`);
@@ -189,23 +212,45 @@ async function run({ github, context, core, exec }) {
   let newContent = '';
   let committed = false;
 
+  const localResult = applyChange ? applyChange(rawContent) : { content: rawContent, changed: false, entries: [] };
+  hasChanges = localResult.changed;
+  entries = localResult.entries;
+
   if (hasChanges) {
-    newContent = changelogLib.render(parsed);
+    newContent = localResult.content;
     fs.writeFileSync(file, newContent, 'utf8');
     core.info(`Wrote ${file}`);
 
     if (doCommit) {
-      const result = await commitLib.commitAndPush({
-        exec,
-        core,
-        file,
-        commitMessage,
-        commitBranch,
-        authorName: env('INPUT_COMMIT_AUTHOR_NAME', 'froozeify-gh-changelog-updater'),
-        authorEmail: env('INPUT_COMMIT_AUTHOR_EMAIL', 'froozeify-gh-changelog-updater[bot]@users.noreply.github.com'),
-        token,
-      });
-      committed = result.committed;
+      const commitBody = TRAILER;
+
+      if (commitMethod === 'git') {
+        const result = await commitLib.commitAndPush({
+          exec,
+          core,
+          file,
+          commitMessage,
+          commitMessageBody: commitBody,
+          commitBranch,
+          authorName: env('INPUT_COMMIT_AUTHOR_NAME', 'github-actions[bot]'),
+          authorEmail: env('INPUT_COMMIT_AUTHOR_EMAIL', '41898282+github-actions[bot]@users.noreply.github.com'),
+          token,
+        });
+        committed = result.committed;
+      } else {
+        const result = await commitLib.commitViaApi({
+          github,
+          core,
+          owner: context.repo.owner,
+          repo: context.repo.repo,
+          file,
+          branch: commitBranch,
+          headline: commitMessage,
+          body: commitBody,
+          applyChange,
+        });
+        committed = result.committed;
+      }
     }
   } else {
     core.info('No changelog changes to write.');
