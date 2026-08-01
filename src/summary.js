@@ -6,6 +6,7 @@ async function writeSummary({ core, mode, file, version, entries, committed, com
 
   const title = version ? `Update changelog v${version}` : 'Update changelog';
   core.summary.addHeading(title, 2);
+  core.summary.addEOL();
 
   const lines = [
     '| | |',
@@ -19,6 +20,7 @@ async function writeSummary({ core, mode, file, version, entries, committed, com
   if (actionRef) lines.push(`| **Action version** | \`${actionRef}\` |`);
 
   core.summary.addRaw(lines.join('\n'), true);
+  core.summary.addEOL();
 
   if (entries.length) {
     core.summary.addHeading('Entries', 3);
