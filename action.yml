@@ -1,8 +1,5 @@
 name: Froozeify's Changelog Updater (gCu)
-description: >
-  Automatically maintains a Keep a Changelog CHANGELOG.md: appends an entry under [Unreleased]
-  for each merged pull request (categorized by its labels), and promotes [Unreleased] to a
-  dated version section when a release is published.
+description: Adds a Keep a Changelog entry per merged PR (by label) and promotes Unreleased on release.
 author: froozeify
 
 branding:
