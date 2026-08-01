@@ -19,7 +19,10 @@ function test(name, fn) {
 function makeCore() {
   const core = {
     info: () => {},
-    warning: () => {},
+    warnings: [],
+    warning(msg) {
+      core.warnings.push(msg);
+    },
     setFailed: (msg) => {
       throw new Error(`core.setFailed: ${msg}`);
     },
@@ -176,6 +179,23 @@ test('add-unreleased: no "Changelog:" line in the PR body falls back to the titl
 
     const content = fs.readFileSync('CHANGELOG.md', 'utf8');
     assert.ok(content.includes('- Fix the login bug (#56)'));
+    assert.deepStrictEqual(core.warnings, []);
+  }));
+
+test('add-unreleased: a custom entry-template dropping {number} triggers a warning', () =>
+  withTempDir(async () => {
+    setEnv({ INPUT_COMMIT: 'false', INPUT_ENTRY_TEMPLATE: '- {title}' });
+    const run = freshIndex();
+    const core = makeCore();
+    const context = makePrContext({ number: 61, title: 'Improve error messages', labels: [{ name: 'enhancement' }] });
+
+    await run({ github: {}, context, core, exec: {} });
+
+    const content = fs.readFileSync('CHANGELOG.md', 'utf8');
+    assert.ok(content.includes('- Improve error messages'));
+    assert.ok(!content.includes('#61'));
+    assert.strictEqual(core.warnings.length, 1);
+    assert.ok(core.warnings[0].includes('{number}'));
   }));
 
 test('add-unreleased: a manually edited entry is preserved on re-run (PR number kept)', () =>
