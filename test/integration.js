@@ -37,6 +37,7 @@ function makeCore() {
     addTable: () => core.summary,
     addList: () => core.summary,
     addRaw: () => core.summary,
+    addEOL: () => core.summary,
     write: async () => {},
   };
   return core;
