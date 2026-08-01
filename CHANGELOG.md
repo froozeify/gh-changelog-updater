@@ -9,3 +9,4 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/) and this p
 ### Added
 
 - First changelog updater version (#1)
+- Display warning if the template doesn't have PR id in it (#2)
