@@ -133,6 +133,39 @@ test('upsertBullet is a true no-op when category and text are both unchanged', (
   assert.deepStrictEqual(section.categories[0].bullets, ['Thing (#42)']);
 });
 
+test('removeBulletsByRef removes an existing entry and reports true', () => {
+  const parsed = changelog.parse('');
+  const section = changelog.ensureUnreleased(parsed);
+  changelog.upsertBullet(section, 'Added', 'Thing (#42)', labels.DEFAULT_CATEGORY_ORDER, '(#42)', false);
+
+  const changed = changelog.removeBulletsByRef(section, '(#42)');
+
+  assert.strictEqual(changed, true);
+  assert.deepStrictEqual(section.categories[0].bullets, []);
+});
+
+test('removeBulletsByRef collapses every pre-existing duplicate for a refToken, not just one', () => {
+  const parsed = changelog.parse('');
+  const section = changelog.ensureUnreleased(parsed);
+  const added = changelog.ensureCategory(section, 'Added', labels.DEFAULT_CATEGORY_ORDER);
+  added.bullets.push('Thing (#42)');
+  const changedCat = changelog.ensureCategory(section, 'Changed', labels.DEFAULT_CATEGORY_ORDER);
+  changedCat.bullets.push('Thing (#42)');
+
+  const changed = changelog.removeBulletsByRef(section, '(#42)');
+
+  assert.strictEqual(changed, true);
+  assert.deepStrictEqual(added.bullets, []);
+  assert.deepStrictEqual(changedCat.bullets, []);
+});
+
+test('removeBulletsByRef is a no-op and reports false when there is nothing to remove', () => {
+  const parsed = changelog.parse('');
+  const section = changelog.ensureUnreleased(parsed);
+
+  assert.strictEqual(changelog.removeBulletsByRef(section, '(#42)'), false);
+});
+
 test('ensureCategory respects category-order when inserting among existing categories', () => {
   const parsed = changelog.parse('');
   const section = changelog.ensureUnreleased(parsed);

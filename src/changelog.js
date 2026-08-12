@@ -167,6 +167,18 @@ function upsertBullet(section, categoryName, bulletText, categoryOrder, refToken
   return true;
 }
 
+// Remove every bullet matching refToken anywhere in the section — used when a PR no longer
+// resolves to any category (excluded via exclude-labels, or unlabeled with an empty
+// default-category), so a previously-added entry doesn't linger once that happens.
+// Returns true if anything was removed.
+function removeBulletsByRef(section, refToken) {
+  const matches = findBulletsByRef(section, refToken);
+  if (!matches.length) return false;
+
+  [...matches].sort((a, b) => b.index - a.index).forEach(({ category, index }) => category.bullets.splice(index, 1));
+  return true;
+}
+
 // Promote [Unreleased] to a dated version section.
 // Returns null if there is no [Unreleased] section at all.
 // Returns { hadContent } describing whether it carried any bullets (an empty
@@ -195,5 +207,6 @@ module.exports = {
   ensureUnreleased,
   ensureCategory,
   upsertBullet,
+  removeBulletsByRef,
   promote,
 };

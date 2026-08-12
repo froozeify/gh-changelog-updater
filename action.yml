@@ -63,12 +63,17 @@ inputs:
   default-category:
     description: >
       Category to file a pull request under when none of its labels match label-mapping.
-      Set to an empty string to skip unlabeled/unmatched pull requests entirely.
+      Set to an empty string to skip unlabeled/unmatched pull requests entirely — same as
+      exclude-labels, this also removes a pull request's existing entry if it had one and lost
+      its matching label.
     required: false
     default: Changed
 
   exclude-labels:
-    description: Comma-separated labels that exclude a pull request from the changelog entirely.
+    description: >
+      Comma-separated labels that exclude a pull request from the changelog entirely. If the
+      pull request already has an entry (e.g. it was labeled correctly before, or an exclude
+      label was added afterwards), that entry is removed rather than left stale.
     required: false
     default: ignore-for-release
 

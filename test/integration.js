@@ -219,6 +219,55 @@ test('add-unreleased: relabeling a merged PR moves the entry instead of duplicat
     assert.strictEqual(core2.outputs.updated, 'true');
   }));
 
+test('add-unreleased: adding an exclude-label removes a pre-existing entry instead of leaving it stale', () =>
+  withTempDir(async () => {
+    setEnv({ INPUT_COMMIT: 'false' });
+    const context = makePrContext({ number: 17, title: 'Some PR', labels: [{ name: 'enhancement' }] });
+
+    await freshIndex()({ github: {}, context, core: makeCore(), exec: {} });
+    let content = fs.readFileSync('CHANGELOG.md', 'utf8');
+    assert.ok(content.includes('(#17)'));
+
+    context.payload.pull_request.labels = [{ name: 'enhancement' }, { name: 'ignore-for-release' }];
+    const core2 = makeCore();
+    await freshIndex()({ github: {}, context, core: core2, exec: {} });
+
+    content = fs.readFileSync('CHANGELOG.md', 'utf8');
+    assert.ok(!content.includes('(#17)'));
+    assert.strictEqual(core2.outputs.updated, 'true');
+  }));
+
+test('add-unreleased: default-category="" removes a pre-existing entry once the PR loses its label', () =>
+  withTempDir(async () => {
+    setEnv({ INPUT_COMMIT: 'false', INPUT_DEFAULT_CATEGORY: '' });
+    const context = makePrContext({ number: 18, title: 'Some PR', labels: [{ name: 'enhancement' }] });
+
+    await freshIndex()({ github: {}, context, core: makeCore(), exec: {} });
+    let content = fs.readFileSync('CHANGELOG.md', 'utf8');
+    assert.ok(content.includes('(#18)'));
+
+    context.payload.pull_request.labels = []; // unlabeled, and default-category is empty
+    const core2 = makeCore();
+    await freshIndex()({ github: {}, context, core: core2, exec: {} });
+
+    content = fs.readFileSync('CHANGELOG.md', 'utf8');
+    assert.ok(!content.includes('(#18)'));
+    assert.strictEqual(core2.outputs.updated, 'true');
+  }));
+
+test('add-unreleased: default-category="" on an unlabeled PR with no prior entry is a true no-op', () =>
+  withTempDir(async () => {
+    setEnv({ INPUT_COMMIT: 'false', INPUT_DEFAULT_CATEGORY: '' });
+    const run = freshIndex();
+    const core = makeCore();
+    const context = makePrContext({ number: 19, title: 'Some PR', labels: [] });
+
+    await run({ github: {}, context, core, exec: {} });
+
+    assert.strictEqual(fs.existsSync('CHANGELOG.md'), false);
+    assert.strictEqual(core.outputs.updated, 'false');
+  }));
+
 test('add-unreleased: re-running the same merged PR is idempotent', () =>
   withTempDir(async () => {
     setEnv({ INPUT_COMMIT: 'false' });

@@ -59,7 +59,11 @@ The default mapping mirrors the labels used in this repo's own `.github/release.
 | `Security`   | `security`                                                                                                            |
 
 Pull requests with none of these labels fall back to `default-category` (`Changed` by default; set to an empty string to skip unlabeled PRs entirely).  
-Pull requests carrying an `exclude-labels` label (default: `ignore-for-release`) are always skipped.
+Pull requests carrying an `exclude-labels` label (default: `ignore-for-release`) are always skipped.  
+In both cases, "skipped" also means *removed*: if the pull request already has an entry (it had a
+matching label before, or gained an exclude label afterwards), that entry is deleted rather than left
+behind. With the default (non-empty) `default-category`, this only ever happens via `exclude-labels` —
+an unlabeled PR always has somewhere to go.
 
 Each entry shows the PR number by default (`- {title} (#{number})`).
 

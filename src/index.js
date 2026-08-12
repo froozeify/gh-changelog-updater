@@ -102,10 +102,12 @@ async function resolveAddUnreleased({ github, context, core, categoryOrder, labe
     return { ready: false, prNumber: pr.number };
   }
 
+  const refToken = `#${pr.number}`;
+
   const category = labelsLib.categorize(pr.labels, { labelMapping, categoryOrder, excludeLabels, defaultCategory });
   if (!category) {
-    core.info(`PR #${pr.number} has no matching/mapped label — skipping.`);
-    return { ready: false, prNumber: pr.number };
+    core.info(`PR #${pr.number} has no matching/mapped label — removing any existing entry, if present.`);
+    return { ready: false, remove: true, prNumber: pr.number, refToken };
   }
 
   const note = extractChangelogNote(pr.body, noteMarker);
@@ -115,7 +117,6 @@ async function resolveAddUnreleased({ github, context, core, categoryOrder, labe
   // default entry-template includes it as "(#42)"). Custom templates must keep {number}
   // in some form, or re-runs of the same PR will add a duplicate entry — warn since this
   // otherwise fails silently.
-  const refToken = `#${pr.number}`;
   if (!bullet.includes(refToken)) {
     core.warning(
       `entry-template doesn't include {number} — if this workflow run is ever re-triggered, PR #${pr.number}'s entry will be duplicated instead of recognized as already present.`,
@@ -135,6 +136,18 @@ function applyAddUnreleased(rawContent, { category, bullet, refToken, categoryOr
   if (!changed && core) core.info(`Entry already present — skipping (idempotent).`);
 
   return { content: changelogLib.render(parsed), changed, entries: changed ? [bullet] : [] };
+}
+
+// Pure, same reasoning as applyAddUnreleased above. Used when a PR no longer resolves to any
+// category (excluded via exclude-labels, or unlabeled with an empty default-category).
+function applyRemoveUnreleased(rawContent, { refToken, core }) {
+  const parsed = changelogLib.parse(rawContent);
+  const section = changelogLib.ensureUnreleased(parsed);
+  const changed = changelogLib.removeBulletsByRef(section, refToken);
+
+  if (changed && core) core.info(`Removed existing entry for ${refToken}.`);
+
+  return { content: changelogLib.render(parsed), changed, entries: [] };
 }
 
 // Pure, same reasoning as applyAddUnreleased above.
@@ -198,8 +211,10 @@ async function run({ github, context, core, exec }) {
   if (mode === 'add-unreleased') {
     const resolved = await resolveAddUnreleased({ github, context, core, categoryOrder, labelMapping, excludeLabels, defaultCategory, entryTemplate, noteMarker, requireMerged });
     prNumber = resolved.prNumber;
-    commitMessage = renderTemplate(env('INPUT_COMMIT_MESSAGE', 'docs: add changelog entry for #{number}'), { number: prNumber, version });
+    const defaultCommitMessage = resolved.remove ? 'docs: remove changelog entry for #{number}' : 'docs: add changelog entry for #{number}';
+    commitMessage = renderTemplate(env('INPUT_COMMIT_MESSAGE', defaultCommitMessage), { number: prNumber, version });
     if (resolved.ready) applyChange = (raw) => applyAddUnreleased(raw, { ...resolved, core });
+    else if (resolved.remove) applyChange = (raw) => applyRemoveUnreleased(raw, { refToken: resolved.refToken, core });
   } else if (mode === 'promote-unreleased') {
     version = stripV(env('INPUT_VERSION', releaseOrRefVersion(context)));
     commitMessage = renderTemplate(env('INPUT_COMMIT_MESSAGE', 'ci: update changelog for {version}'), { version });
