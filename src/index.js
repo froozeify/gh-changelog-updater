@@ -79,7 +79,7 @@ function releaseOrRefVersion(context) {
 // Resolves everything that depends on the PR payload (async) but not on the changelog file's
 // current content, so the actual mutation can be re-run as a pure function against whichever
 // copy of the file (local checkout vs. freshly re-fetched remote) needs it — see applyAddUnreleased.
-async function resolveAddUnreleased({ github, context, core, categoryOrder, labelMapping, excludeLabels, defaultCategory, entryTemplate, noteMarker }) {
+async function resolveAddUnreleased({ github, context, core, categoryOrder, labelMapping, excludeLabels, defaultCategory, entryTemplate, noteMarker, requireMerged }) {
   let pr = context.payload.pull_request;
   const prNumberInput = env('INPUT_PR_NUMBER');
 
@@ -93,8 +93,8 @@ async function resolveAddUnreleased({ github, context, core, categoryOrder, labe
     return { ready: false, prNumber: null };
   }
 
-  if (!(pr.merged_at || pr.merged)) {
-    core.info(`PR #${pr.number} is not merged — skipping.`);
+  if (requireMerged && !(pr.merged_at || pr.merged)) {
+    core.info(`PR #${pr.number} is not merged — skipping (require-merged is true).`);
     return { ready: false, prNumber: pr.number };
   }
 
@@ -165,6 +165,7 @@ async function run({ github, context, core, exec }) {
   const skipPrerelease = boolEnv('INPUT_SKIP_PRERELEASE', true);
   const skipIfEmpty = boolEnv('INPUT_SKIP_IF_EMPTY', true);
   const doCommit = boolEnv('INPUT_COMMIT', true);
+  const requireMerged = boolEnv('INPUT_REQUIRE_MERGED', true);
   const date = env('INPUT_DATE') || todayUTC();
   const actionRef = env('INPUT_ACTION_REF');
   const commitBranch = env('INPUT_COMMIT_BRANCH', 'main');
@@ -191,7 +192,7 @@ async function run({ github, context, core, exec }) {
   let applyChange = null; // (rawContent) -> { content, changed, entries } — null when nothing to apply
 
   if (mode === 'add-unreleased') {
-    const resolved = await resolveAddUnreleased({ github, context, core, categoryOrder, labelMapping, excludeLabels, defaultCategory, entryTemplate, noteMarker });
+    const resolved = await resolveAddUnreleased({ github, context, core, categoryOrder, labelMapping, excludeLabels, defaultCategory, entryTemplate, noteMarker, requireMerged });
     prNumber = resolved.prNumber;
     commitMessage = renderTemplate(env('INPUT_COMMIT_MESSAGE', 'docs: add changelog entry for #{number}'), { number: prNumber, version });
     if (resolved.ready) applyChange = (raw) => applyAddUnreleased(raw, { ...resolved, core });

@@ -108,31 +108,73 @@ install it on the repo, and mint a token for it with [`actions/create-github-app
 
 With `commit-method: api` (the default) that's the whole change — the commit author follows the token automatically, so `commit-author-name`/`commit-author-email` don't need to be set.
 
+## Committing to the pull request's own branch before merge
+
+The default flow (`require-merged: true`, the canonical [Quick start](#quick-start) setup) adds the
+entry to `main` right after merge — which needs `contents: write` on a possibly protected branch. If
+`main` requires pull requests and you don't have a bypass-capable token handy, you can instead add the
+entry to the PR's own branch *before* it merges, so it rides into the base branch as part of the merge
+commit itself — no push to the base branch needed at all:
+
+```yaml
+# .github/workflows/changelog.yml
+name: Changelog
+
+on:
+  pull_request:
+    types: [ opened, synchronize, reopened, edited, labeled, unlabeled ]
+
+permissions:
+  contents: write
+
+jobs:
+  update-changelog:
+    # GITHUB_TOKEN can never push to a fork's branch — same-repo PRs only.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.head_ref }}
+
+      - uses: froozeify/gh-changelog-updater@v1
+        with:
+          require-merged: 'false'
+          commit-branch: ${{ github.head_ref }}
+```
+
+Re-triggering on `edited`/`labeled`/`unlabeled` keeps the entry in sync as the title, description, or
+labels change — each run updates the same entry (matched by PR number) instead of duplicating it. The
+trade-off is the fork limitation: `GITHUB_TOKEN` can never push to a fork's branch, so this only covers
+pull requests opened from within the same repository. Forks still need the post-merge flow above (with
+a bypass-capable token if the base branch is protected).
+
 ## Inputs
 
-| Input                 | Required | Default                                                        | Description                                                                                                                                |
-|-----------------------|----------|----------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------|
-| `mode`                | no       | `auto`                                                         | `auto` resolves from the event (`add-unreleased` on a PR event, `promote-unreleased` on a release event). Can be set explicitly.           |
-| `version`             | no       | `${{ github.event.release.tag_name \|\| github.ref_name }}`    | Version for promote. Leading `v` is stripped automatically.                                                                                |
-| `pr-number`           | no       | `${{ github.event.pull_request.number }}`                      | PR to add (add-unreleased mode).                                                                                                           |
-| `changelog-file`      | no       | `CHANGELOG.md`                                                 | File to maintain.                                                                                                                          |
-| `label-mapping`       | no       | see above                                                      | `Category=label1,label2` per line.                                                                                                         |
-| `default-category`    | no       | `Changed`                                                      | Category for PRs with no matching label. Empty = skip.                                                                                     |
-| `exclude-labels`      | no       | `ignore-for-release`                                           | Labels that exclude a PR entirely.                                                                                                         |
-| `category-order`      | no       | `Added,Changed,Deprecated,Removed,Fixed,Security`              | Section ordering.                                                                                                                          |
-| `entry-template`      | no       | `- {title} (#{number})`                                        | Bullet template. Placeholders: `{title}` `{number}` `{author}` `{url}`. Keep `{number}` in the template or re-runs will duplicate entries. |
-| `note-marker`         | no       | `Changelog:`                                                   | PR description line that overrides the PR title for the entry's `{title}`. Empty string disables it.                                       |
-| `skip-prerelease`     | no       | `true`                                                         | promote-unreleased does nothing on a pre-release event. Set `false` to promote pre-releases too.                                           |
-| `skip-if-empty`       | no       | `true`                                                         | Skip promoting (and the commit) when `[Unreleased]` is empty.                                                                              |
-| `keep-unreleased`     | no       | `true`                                                         | After promoting, reopen an empty `[Unreleased]`. Set `false` to drop it.                                                                   |
-| `date`                | no       | today (UTC)                                                    | Override the version's date.                                                                                                               |
-| `commit`              | no       | `true`                                                         | Set to `false` to update the file without committing.                                                                                      |
-| `commit-message`      | no       | mode-dependent                                                 | `docs: add changelog entry for #{number}` (add) / `ci: update changelog for {version}` (promote).                                          |
-| `commit-branch`       | no       | `main`                                                         | Branch to push to.                                                                                                                         |
-| `commit-method`       | no       | `api`                                                          | `api` commits via GitHub's `createCommitOnBranch` (signed, shows as Verified). `git` commits locally via `git commit`/`push` instead.      |
-| `commit-author-name`  | no       | `github-actions[bot]`                                          | Git author name. Only used when `commit-method: git`.                                                                                     |
-| `commit-author-email` | no       | `41898282+github-actions[bot]@users.noreply.github.com`        | Git author email. Only used when `commit-method: git`.                                                                                    |
-| `token`               | no       | `${{ github.token }}`                                          | Needs `contents: write`.                                                                                                                   |
+| Input                 | Required | Default                                                     | Description                                                                                                                                     |
+|-----------------------|----------|-------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------|
+| `mode`                | no       | `auto`                                                      | `auto` resolves from the event (`add-unreleased` on a PR event, `promote-unreleased` on a release event). Can be set explicitly.                |
+| `version`             | no       | `${{ github.event.release.tag_name \|\| github.ref_name }}` | Version for promote. Leading `v` is stripped automatically.                                                                                     |
+| `pr-number`           | no       | `${{ github.event.pull_request.number }}`                   | PR to add (add-unreleased mode).                                                                                                                |
+| `require-merged`      | no       | `true`                                                      | Set `false` to add the entry to an open (not-yet-merged) PR — see [committing to pr](#committing-to-the-pull-requests-own-branch-before-merge). |
+| `changelog-file`      | no       | `CHANGELOG.md`                                              | File to maintain.                                                                                                                               |
+| `label-mapping`       | no       | see above                                                   | `Category=label1,label2` per line.                                                                                                              |
+| `default-category`    | no       | `Changed`                                                   | Category for PRs with no matching label. Empty = skip.                                                                                          |
+| `exclude-labels`      | no       | `ignore-for-release`                                        | Labels that exclude a PR entirely.                                                                                                              |
+| `category-order`      | no       | `Added,Changed,Deprecated,Removed,Fixed,Security`           | Section ordering.                                                                                                                               |
+| `entry-template`      | no       | `- {title} (#{number})`                                     | Bullet template. Placeholders: `{title}` `{number}` `{author}` `{url}`. Keep `{number}` in the template or re-runs will duplicate entries.      |
+| `note-marker`         | no       | `Changelog:`                                                | PR description line that overrides the PR title for the entry's `{title}`. Empty string disables it.                                            |
+| `skip-prerelease`     | no       | `true`                                                      | promote-unreleased does nothing on a pre-release event. Set `false` to promote pre-releases too.                                                |
+| `skip-if-empty`       | no       | `true`                                                      | Skip promoting (and the commit) when `[Unreleased]` is empty.                                                                                   |
+| `keep-unreleased`     | no       | `true`                                                      | After promoting, reopen an empty `[Unreleased]`. Set `false` to drop it.                                                                        |
+| `date`                | no       | today (UTC)                                                 | Override the version's date.                                                                                                                    |
+| `commit`              | no       | `true`                                                      | Set to `false` to update the file without committing.                                                                                           |
+| `commit-message`      | no       | mode-dependent                                              | `docs: add changelog entry for #{number}` (add) / `ci: update changelog for {version}` (promote).                                               |
+| `commit-branch`       | no       | `main`                                                      | Branch to push to.                                                                                                                              |
+| `commit-method`       | no       | `api`                                                       | `api` commits via GitHub's `createCommitOnBranch` (signed, shows as Verified). `git` commits locally via `git commit`/`push` instead.           |
+| `commit-author-name`  | no       | `github-actions[bot]`                                       | Git author name. Only used when `commit-method: git`.                                                                                           |
+| `commit-author-email` | no       | `41898282+github-actions[bot]@users.noreply.github.com`     | Git author email. Only used when `commit-method: git`.                                                                                          |
+| `token`               | no       | `${{ github.token }}`                                       | Needs `contents: write`.                                                                                                                        |
 
 ## Outputs
 
