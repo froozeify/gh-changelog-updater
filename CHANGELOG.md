@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/) and this p
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-08-12
+
 ### Fixed
 
 - Changelog update on PR itself should sync with title/description/label (#9)
