@@ -131,6 +131,48 @@ test('add-unreleased: unmerged PR is a no-op', () =>
     assert.strictEqual(core.outputs.updated, 'false');
   }));
 
+test('add-unreleased: require-merged=false processes an open (unmerged) PR', () =>
+  withTempDir(async () => {
+    setEnv({ INPUT_COMMIT: 'false', INPUT_REQUIRE_MERGED: 'false' });
+    const run = freshIndex();
+    const core = makeCore();
+    const context = makePrContext({
+      number: 8,
+      title: 'Still-open PR',
+      merged_at: null,
+      labels: [{ name: 'enhancement' }],
+    });
+
+    await run({ github: {}, context, core, exec: {} });
+
+    const content = fs.readFileSync('CHANGELOG.md', 'utf8');
+    assert.ok(content.includes('- Still-open PR (#8)'));
+    assert.strictEqual(core.outputs.updated, 'true');
+  }));
+
+test('add-unreleased: require-merged=false still re-runs idempotently as the PR is edited', () =>
+  withTempDir(async () => {
+    setEnv({ INPUT_COMMIT: 'false', INPUT_REQUIRE_MERGED: 'false' });
+    const context = makePrContext({
+      number: 9,
+      title: 'Initial title',
+      merged_at: null,
+      labels: [{ name: 'enhancement' }],
+    });
+
+    await freshIndex()({ github: {}, context, core: makeCore(), exec: {} });
+
+    context.payload.pull_request.title = 'Retitled before merge';
+    const core2 = makeCore();
+    await freshIndex()({ github: {}, context, core: core2, exec: {} });
+
+    const content = fs.readFileSync('CHANGELOG.md', 'utf8');
+    // add-unreleased only appends; it doesn't rewrite the wording on a title change alone —
+    // matches the existing "manually edited entry is preserved" behavior for merged PRs.
+    assert.ok(content.includes('- Initial title (#9)'));
+    assert.strictEqual(core2.outputs.updated, 'false');
+  }));
+
 test('add-unreleased: re-running the same merged PR is idempotent', () =>
   withTempDir(async () => {
     setEnv({ INPUT_COMMIT: 'false' });

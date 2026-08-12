@@ -31,6 +31,18 @@ inputs:
     required: false
     default: ${{ github.event.pull_request.number }}
 
+  require-merged:
+    description: >
+      When true (default), add-unreleased skips any pull request that isn't merged yet — the
+      canonical setup, triggered on pull_request_target's "closed" type, committing to main.
+      Set to "false" to add the entry to an *open* pull request instead — pair with
+      commit-branch set to the PR's own branch (e.g. github.head_ref) and trigger on
+      opened/synchronize/reopened/edited/labeled/unlabeled, so the entry rides into the base
+      branch as part of the merge commit itself. Only works for same-repo pull requests —
+      GITHUB_TOKEN can never push to a fork's branch or change the token setting to be a Github App.
+    required: false
+    default: 'true'
+
   changelog-file:
     description: Path to the changelog file to maintain.
     required: false
@@ -182,6 +194,7 @@ runs:
         INPUT_MODE: ${{ inputs.mode }}
         INPUT_VERSION: ${{ inputs.version }}
         INPUT_PR_NUMBER: ${{ inputs.pr-number }}
+        INPUT_REQUIRE_MERGED: ${{ inputs.require-merged }}
         INPUT_CHANGELOG_FILE: ${{ inputs.changelog-file }}
         INPUT_LABEL_MAPPING: ${{ inputs.label-mapping }}
         INPUT_DEFAULT_CATEGORY: ${{ inputs.default-category }}
