@@ -70,9 +70,10 @@ If you customize `entry-template`, keep `{number}` somewhere or re-runs will dup
 
 You can freely hand-edit `CHANGELOG.md` yourself.
 
-- **Editing an auto-added entry's wording**: You should only keep the `#42` reference somewhere. The action matches entries by that number.
-- **Adding your own lines that aren't tied to any PR**: Write them under `## [Unreleased]` (or any category) like any other markdown bullet. 
-  - `add-unreleased` only ever *appends* a new bullet for the PR that triggered it; it never touches, reorders, or removes existing lines.
+- **Editing an auto-added entry's wording**: You should only keep the `#42` reference somewhere. The action matches entries by that number, wherever it is in the `[Unreleased]` section — not just within the category it expects.
+  - With `require-merged: true` (the default), a re-run that finds the entry still under the *same* category leaves your hand-edited wording untouched. A re-run that finds it under a *different* category (the PR was relabeled) moves it to the new category — but that move always uses the freshly rendered `{title}`, discarding whatever wording was there before.
+  - With `require-merged: false` (see [Committing to the pull request's own branch before merge](#committing-to-the-pull-requests-own-branch-before-merge)), every re-run refreshes the wording in place too, even without a category change — the PR hasn't merged yet, so nothing is treated as final. Use the `Changelog:` marker below, not a direct hand-edit, if you want to lock in custom wording before merge.
+- **Adding your own lines that aren't tied to any PR**: Write them under `## [Unreleased]` (or any category) like any other markdown bullet, without a `#<number>` reference anywhere in the line. `add-unreleased` never touches a bullet it doesn't recognize as "its" PR.
   - `promote-unreleased` only renames the `[Unreleased]` heading — it doesn't touch the bullets under it.
 
 You can also front-load the wording before merging: write a line starting with `Changelog:` anywhere in the pull request description, and that text is used instead of the PR title
@@ -82,6 +83,8 @@ Changelog: Fix crash when opening the settings page
 ```
 
 Customize or disable the marker with the `note-marker` input (set it to `''` to turn this off).
+Text inside HTML comments (`<!-- ... -->`) is ignored, so a `Changelog:` example shown as
+boilerplate in your PR template doesn't get picked up ahead of the one you actually wrote.
 
 ## Commit identity
 

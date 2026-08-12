@@ -48,20 +48,20 @@ test('parse extracts version headings, dates, categories and bullets', () => {
 // add-unreleased flow
 // ---------------------------------------------------------------------------
 
-test('addBullet creates [Unreleased] + category on an empty file with the fields preamble', () => {
+test('upsertBullet creates [Unreleased] + category on an empty file with the fields preamble', () => {
   const parsed = changelog.parse('');
   const section = changelog.ensureUnreleased(parsed);
-  changelog.addBullet(section, 'Added', 'New URL field type (#123)', labels.DEFAULT_CATEGORY_ORDER, '(#123)');
+  changelog.upsertBullet(section, 'Added', 'New URL field type (#123)', labels.DEFAULT_CATEGORY_ORDER, '(#123)', false);
 
   const expected = `${changelog.DEFAULT_PREAMBLE}\n\n## [Unreleased]\n\n### Added\n\n- New URL field type (#123)\n`;
 
   assert.strictEqual(changelog.render(parsed), expected);
 });
 
-test('addBullet on an existing file inserts [Unreleased] above the newest version', () => {
+test('upsertBullet on an existing file inserts [Unreleased] above the newest version', () => {
   const parsed = changelog.parse(fixture);
   const section = changelog.ensureUnreleased(parsed);
-  changelog.addBullet(section, 'Fixed', 'A brand new fix (#999)', labels.DEFAULT_CATEGORY_ORDER, '(#999)');
+  changelog.upsertBullet(section, 'Fixed', 'A brand new fix (#999)', labels.DEFAULT_CATEGORY_ORDER, '(#999)', false);
 
   const rendered = changelog.render(parsed);
   const unreleasedIdx = rendered.indexOf('## [Unreleased]');
@@ -70,22 +70,74 @@ test('addBullet on an existing file inserts [Unreleased] above the newest versio
   assert.ok(rendered.includes('- A brand new fix (#999)'));
 });
 
-test('addBullet is idempotent for a duplicate PR ref', () => {
+test('upsertBullet(syncText: false) is idempotent for a duplicate PR ref and keeps the original wording', () => {
   const parsed = changelog.parse('');
   const section = changelog.ensureUnreleased(parsed);
-  const first = changelog.addBullet(section, 'Added', 'Thing (#42)', labels.DEFAULT_CATEGORY_ORDER, '(#42)');
-  const second = changelog.addBullet(section, 'Added', 'Thing (#42) — edited title', labels.DEFAULT_CATEGORY_ORDER, '(#42)');
+  const first = changelog.upsertBullet(section, 'Added', 'Thing (#42)', labels.DEFAULT_CATEGORY_ORDER, '(#42)', false);
+  const second = changelog.upsertBullet(section, 'Added', 'Thing (#42) — edited title', labels.DEFAULT_CATEGORY_ORDER, '(#42)', false);
 
   assert.strictEqual(first, true);
   assert.strictEqual(second, false);
-  assert.strictEqual(section.categories[0].bullets.length, 1);
+  assert.deepStrictEqual(section.categories[0].bullets, ['Thing (#42)']);
+});
+
+test('upsertBullet(syncText: true) refreshes the wording in place when only the text changed', () => {
+  const parsed = changelog.parse('');
+  const section = changelog.ensureUnreleased(parsed);
+  changelog.upsertBullet(section, 'Added', 'Thing (#42)', labels.DEFAULT_CATEGORY_ORDER, '(#42)', true);
+  const changed = changelog.upsertBullet(section, 'Added', 'Thing v2 (#42)', labels.DEFAULT_CATEGORY_ORDER, '(#42)', true);
+
+  assert.strictEqual(changed, true);
+  assert.deepStrictEqual(section.categories[0].bullets, ['Thing v2 (#42)']);
+});
+
+test('upsertBullet moves a relabeled entry to its new category instead of duplicating it (regardless of syncText)', () => {
+  for (const syncText of [false, true]) {
+    const parsed = changelog.parse('');
+    const section = changelog.ensureUnreleased(parsed);
+    changelog.upsertBullet(section, 'Fixed', 'Thing (#42)', labels.DEFAULT_CATEGORY_ORDER, '(#42)', syncText);
+    const changed = changelog.upsertBullet(section, 'Added', 'Thing (#42)', labels.DEFAULT_CATEGORY_ORDER, '(#42)', syncText);
+
+    assert.strictEqual(changed, true, `syncText=${syncText}`);
+    const fixed = section.categories.find((c) => c.name === 'Fixed');
+    const added = section.categories.find((c) => c.name === 'Added');
+    assert.deepStrictEqual(fixed.bullets, [], `syncText=${syncText}`);
+    assert.deepStrictEqual(added.bullets, ['Thing (#42)'], `syncText=${syncText}`);
+  }
+});
+
+test('upsertBullet collapses a pre-existing duplicate (same refToken under two categories) into one entry', () => {
+  const parsed = changelog.parse('');
+  const section = changelog.ensureUnreleased(parsed);
+  // Simulate corruption from before this dedup logic existed: the same PR filed under both
+  // Added and Changed at once.
+  const added = changelog.ensureCategory(section, 'Added', labels.DEFAULT_CATEGORY_ORDER);
+  added.bullets.push('Fix crash (#15)');
+  const changedCat = changelog.ensureCategory(section, 'Changed', labels.DEFAULT_CATEGORY_ORDER);
+  changedCat.bullets.push('Fix crash (#15)');
+
+  const changed = changelog.upsertBullet(section, 'Changed', 'Fix crash (#15)', labels.DEFAULT_CATEGORY_ORDER, '(#15)', true);
+
+  assert.strictEqual(changed, true);
+  assert.deepStrictEqual(added.bullets, []);
+  assert.deepStrictEqual(changedCat.bullets, ['Fix crash (#15)']);
+});
+
+test('upsertBullet is a true no-op when category and text are both unchanged', () => {
+  const parsed = changelog.parse('');
+  const section = changelog.ensureUnreleased(parsed);
+  changelog.upsertBullet(section, 'Added', 'Thing (#42)', labels.DEFAULT_CATEGORY_ORDER, '(#42)', true);
+  const changed = changelog.upsertBullet(section, 'Added', 'Thing (#42)', labels.DEFAULT_CATEGORY_ORDER, '(#42)', true);
+
+  assert.strictEqual(changed, false);
+  assert.deepStrictEqual(section.categories[0].bullets, ['Thing (#42)']);
 });
 
 test('ensureCategory respects category-order when inserting among existing categories', () => {
   const parsed = changelog.parse('');
   const section = changelog.ensureUnreleased(parsed);
-  changelog.addBullet(section, 'Fixed', 'A fix (#1)', labels.DEFAULT_CATEGORY_ORDER, '(#1)');
-  changelog.addBullet(section, 'Added', 'A feature (#2)', labels.DEFAULT_CATEGORY_ORDER, '(#2)');
+  changelog.upsertBullet(section, 'Fixed', 'A fix (#1)', labels.DEFAULT_CATEGORY_ORDER, '(#1)', false);
+  changelog.upsertBullet(section, 'Added', 'A feature (#2)', labels.DEFAULT_CATEGORY_ORDER, '(#2)', false);
 
   assert.deepStrictEqual(
     section.categories.map((c) => c.name),
@@ -100,7 +152,7 @@ test('ensureCategory respects category-order when inserting among existing categ
 test('promote restamps [Unreleased] to a dated version section and opens a fresh one', () => {
   const parsed = changelog.parse('');
   const section = changelog.ensureUnreleased(parsed);
-  changelog.addBullet(section, 'Added', 'New URL field type (#123)', labels.DEFAULT_CATEGORY_ORDER, '(#123)');
+  changelog.upsertBullet(section, 'Added', 'New URL field type (#123)', labels.DEFAULT_CATEGORY_ORDER, '(#123)', false);
 
   const result = changelog.promote(parsed, '1.25.0', '2026-07-31', true);
   assert.strictEqual(result.hadContent, true);
@@ -116,7 +168,7 @@ test('promote restamps [Unreleased] to a dated version section and opens a fresh
 test('promote without keep-unreleased drops the [Unreleased] heading entirely', () => {
   const parsed = changelog.parse('');
   const section = changelog.ensureUnreleased(parsed);
-  changelog.addBullet(section, 'Fixed', 'Some fix (#7)', labels.DEFAULT_CATEGORY_ORDER, '(#7)');
+  changelog.upsertBullet(section, 'Fixed', 'Some fix (#7)', labels.DEFAULT_CATEGORY_ORDER, '(#7)', false);
   changelog.promote(parsed, '2.0.0', '2026-08-01', false);
 
   const rendered = changelog.render(parsed);
