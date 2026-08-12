@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/) and this p
 
 ## [Unreleased]
 
+## [1.0.5] - 2026-08-12
+
 ### Added
 
 - Label exclusion support with removal if ignored after (#10)
