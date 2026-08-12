@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/) and this p
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-08-12
+
 ### Added
 
 - Support committing in the PR branch itself (#8)
