@@ -129,16 +129,40 @@ function ensureCategory(section, categoryName, categoryOrder) {
   return category;
 }
 
-function hasBulletRef(category, refToken) {
-  return refToken ? category.bullets.some((b) => b.includes(refToken)) : false;
+// Find every bullet matching refToken anywhere in the section — not just categoryName — so a
+// category change (relabeling) can move the entry instead of leaving a stale duplicate behind
+// under its old category. Normally at most one match; more than one means a prior run already
+// left a stale duplicate (e.g. from before this dedup logic existed), which upsertBullet below
+// collapses back down to one.
+function findBulletsByRef(section, refToken) {
+  if (!refToken) return [];
+  const matches = [];
+  for (const category of section.categories) {
+    category.bullets.forEach((bullet, index) => {
+      if (bullet.includes(refToken)) matches.push({ category, index });
+    });
+  }
+  return matches;
 }
 
-// Append a bullet to section/category, creating the category as needed.
-// Idempotent when refToken (e.g. "(#123)") is supplied and already present.
-// Returns true if the bullet was added, false if skipped as a duplicate.
-function addBullet(section, categoryName, bulletText, categoryOrder, refToken) {
+// Add-or-move a bullet by refToken (e.g. "(#123)"), creating categoryName as needed. Any
+// pre-existing duplicates for the same refToken are collapsed into the single correct entry.
+// Returns true if the section was changed, false if already up to date.
+function upsertBullet(section, categoryName, bulletText, categoryOrder, refToken, syncText) {
+  const matches = findBulletsByRef(section, refToken);
+
+  if (matches.length === 1) {
+    const [only] = matches;
+    const sameCategory = only.category.name === categoryName;
+    const sameText = only.category.bullets[only.index] === bulletText;
+    if (sameCategory && (sameText || !syncText)) return false;
+  }
+
+  // Highest index first so removing one match doesn't shift the index of another match still
+  // pending removal within the same category.
+  [...matches].sort((a, b) => b.index - a.index).forEach(({ category, index }) => category.bullets.splice(index, 1));
+
   const category = ensureCategory(section, categoryName, categoryOrder);
-  if (hasBulletRef(category, refToken)) return false;
   category.bullets.push(bulletText);
   return true;
 }
@@ -170,7 +194,6 @@ module.exports = {
   render,
   ensureUnreleased,
   ensureCategory,
-  hasBulletRef,
-  addBullet,
+  upsertBullet,
   promote,
 };

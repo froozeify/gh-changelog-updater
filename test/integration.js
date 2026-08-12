@@ -150,7 +150,7 @@ test('add-unreleased: require-merged=false processes an open (unmerged) PR', () 
     assert.strictEqual(core.outputs.updated, 'true');
   }));
 
-test('add-unreleased: require-merged=false still re-runs idempotently as the PR is edited', () =>
+test('add-unreleased: require-merged=false refreshes the wording when the PR is retitled', () =>
   withTempDir(async () => {
     setEnv({ INPUT_COMMIT: 'false', INPUT_REQUIRE_MERGED: 'false' });
     const context = makePrContext({
@@ -167,10 +167,56 @@ test('add-unreleased: require-merged=false still re-runs idempotently as the PR 
     await freshIndex()({ github: {}, context, core: core2, exec: {} });
 
     const content = fs.readFileSync('CHANGELOG.md', 'utf8');
-    // add-unreleased only appends; it doesn't rewrite the wording on a title change alone —
-    // matches the existing "manually edited entry is preserved" behavior for merged PRs.
-    assert.ok(content.includes('- Initial title (#9)'));
-    assert.strictEqual(core2.outputs.updated, 'false');
+    assert.ok(content.includes('- Retitled before merge (#9)'));
+    assert.ok(!content.includes('- Initial title (#9)'));
+    assert.strictEqual(core2.outputs.updated, 'true');
+    // Still only one bullet for #9, not two.
+    assert.strictEqual(content.split('(#9)').length - 1, 1);
+  }));
+
+test('add-unreleased: require-merged=false moves the entry when the label changes, without duplicating it', () =>
+  withTempDir(async () => {
+    setEnv({ INPUT_COMMIT: 'false', INPUT_REQUIRE_MERGED: 'false' });
+    const context = makePrContext({
+      number: 15,
+      title: 'Fix crash when summarizing tickets with no timeline entries',
+      merged_at: null,
+      labels: [{ name: 'enhancement' }],
+    });
+
+    await freshIndex()({ github: {}, context, core: makeCore(), exec: {} });
+
+    context.payload.pull_request.labels = [{ name: 'chore' }]; // relabeled -> Changed
+    const core2 = makeCore();
+    await freshIndex()({ github: {}, context, core: core2, exec: {} });
+
+    const content = fs.readFileSync('CHANGELOG.md', 'utf8');
+    assert.strictEqual(content.split('(#15)').length - 1, 1, 'must not appear under both categories');
+    assert.ok(content.includes('### Changed'));
+    assert.ok(!content.includes('### Added'), 'the now-empty Added category must not render');
+    assert.strictEqual(core2.outputs.updated, 'true');
+  }));
+
+test('add-unreleased: relabeling a merged PR moves the entry instead of duplicating it (require-merged: true)', () =>
+  withTempDir(async () => {
+    setEnv({ INPUT_COMMIT: 'false' });
+    const context = makePrContext({
+      number: 16,
+      title: 'Some PR',
+      labels: [{ name: 'enhancement' }],
+    });
+
+    await freshIndex()({ github: {}, context, core: makeCore(), exec: {} });
+
+    context.payload.pull_request.labels = [{ name: 'chore' }];
+    const core2 = makeCore();
+    await freshIndex()({ github: {}, context, core: core2, exec: {} });
+
+    const content = fs.readFileSync('CHANGELOG.md', 'utf8');
+    assert.strictEqual(content.split('(#16)').length - 1, 1, 'must not appear under both categories');
+    assert.ok(content.includes('### Changed'));
+    assert.ok(!content.includes('### Added'), 'the now-empty Added category must not render');
+    assert.strictEqual(core2.outputs.updated, 'true');
   }));
 
 test('add-unreleased: re-running the same merged PR is idempotent', () =>
@@ -205,6 +251,72 @@ test('add-unreleased: "Changelog: ..." line in the PR body overrides the title',
     const content = fs.readFileSync('CHANGELOG.md', 'utf8');
     assert.ok(content.includes('- Fix crash when opening the settings page (#55)'));
     assert.ok(!content.includes('frobnicator'));
+  }));
+
+test('add-unreleased: a "Changelog:" example inside an HTML comment (PR template boilerplate) is ignored', () =>
+  withTempDir(async () => {
+    setEnv({ INPUT_COMMIT: 'false' });
+    const run = freshIndex();
+    const core = makeCore();
+    const context = makePrContext({
+      number: 57,
+      title: 'Update Makefile title',
+      body:
+        '<!--\n' +
+        '  A line starting with `Changelog:` anywhere in this description overrides the PR title\n' +
+        '  as the CHANGELOG.md entry text, e.g.:\n' +
+        '  Changelog: Fix crash when summarizing tickets with no timeline entries\n' +
+        '-->\n\n' +
+        'Changelog: This is a test description\n',
+      labels: [{ name: 'enhancement' }],
+    });
+
+    await run({ github: {}, context, core, exec: {} });
+
+    const content = fs.readFileSync('CHANGELOG.md', 'utf8');
+    assert.ok(content.includes('- This is a test description (#57)'));
+    assert.ok(!content.includes('Fix crash when summarizing tickets'));
+  }));
+
+test('add-unreleased: require-merged=false collapses a pre-existing cross-category duplicate (real-world recovery)', () =>
+  withTempDir(async () => {
+    // Reproduces a file already corrupted by the pre-fix bug: the same PR filed under two
+    // categories with the same (wrong, HTML-comment-example) wording.
+    seedChangelog(
+      [
+        '## [Unreleased]',
+        '',
+        '### Added',
+        '',
+        '- Fix crash when summarizing tickets with no timeline entries (#15)',
+        '',
+        '### Changed',
+        '',
+        '- Fix crash when summarizing tickets with no timeline entries (#15)',
+        '',
+      ].join('\n'),
+    );
+
+    setEnv({ INPUT_COMMIT: 'false', INPUT_REQUIRE_MERGED: 'false' });
+    const run = freshIndex();
+    const core = makeCore();
+    const context = makePrContext({
+      number: 15,
+      title: 'Update Makefile title',
+      merged_at: null,
+      body:
+        '<!--\n  Changelog: Fix crash when summarizing tickets with no timeline entries\n-->\n\n' +
+        'Changelog: This is a test description\n',
+      labels: [{ name: 'chore' }], // -> Changed
+    });
+
+    await run({ github: {}, context, core, exec: {} });
+
+    const content = fs.readFileSync('CHANGELOG.md', 'utf8');
+    assert.strictEqual(content.split('(#15)').length - 1, 1, 'the duplicate must collapse to one entry');
+    assert.ok(content.includes('- This is a test description (#15)'));
+    assert.ok(!content.includes('### Added'), 'the now-empty Added category must not render');
+    assert.strictEqual(core.outputs.updated, 'true');
   }));
 
 test('add-unreleased: no "Changelog:" line in the PR body falls back to the title', () =>

@@ -59,11 +59,15 @@ function renderBullet(entryTemplate, pr, titleOverride) {
 
 // Look for a "Changelog: <custom text>" line (case-insensitive) in the PR description and use
 // that instead of the PR title — lets a PR author/maintainer write the user-facing wording
-// themselves instead of relying on the (often too-technical) PR title.
+// themselves instead of relying on the (often too-technical) PR title. HTML comments are
+// stripped first: PR templates commonly show the marker as a commented-out usage example, which
+// would otherwise be matched (as the *first* occurrence, ahead of anything the author wrote)
+// instead of the real one below it.
 function extractChangelogNote(body, marker) {
   if (!body || !marker) return null;
+  const withoutComments = body.replace(/<!--[\s\S]*?-->/g, '');
   const escapedMarker = marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const match = body.match(new RegExp(`^\\s*${escapedMarker}\\s*(.+)$`, 'im'));
+  const match = withoutComments.match(new RegExp(`^\\s*${escapedMarker}\\s*(.+)$`, 'im'));
   return match ? match[1].trim() || null : null;
 }
 
@@ -118,19 +122,19 @@ async function resolveAddUnreleased({ github, context, core, categoryOrder, labe
     );
   }
 
-  return { ready: true, prNumber: pr.number, category, bullet, refToken, categoryOrder };
+  return { ready: true, prNumber: pr.number, category, bullet, refToken, categoryOrder, requireMerged };
 }
 
 // Pure: parses rawContent fresh each call so it can be re-run against a re-fetched remote copy
 // on a commit conflict retry, not just the local checkout read at the top of run().
-function applyAddUnreleased(rawContent, { category, bullet, refToken, categoryOrder, core }) {
+function applyAddUnreleased(rawContent, { category, bullet, refToken, categoryOrder, core, requireMerged }) {
   const parsed = changelogLib.parse(rawContent);
   const section = changelogLib.ensureUnreleased(parsed);
-  const added = changelogLib.addBullet(section, category, bullet, categoryOrder, refToken);
+  const changed = changelogLib.upsertBullet(section, category, bullet, categoryOrder, refToken, !requireMerged);
 
-  if (!added && core) core.info(`Entry already present — skipping (idempotent).`);
+  if (!changed && core) core.info(`Entry already present — skipping (idempotent).`);
 
-  return { content: changelogLib.render(parsed), changed: added, entries: added ? [bullet] : [] };
+  return { content: changelogLib.render(parsed), changed, entries: changed ? [bullet] : [] };
 }
 
 // Pure, same reasoning as applyAddUnreleased above.
