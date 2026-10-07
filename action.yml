@@ -121,6 +121,22 @@ inputs:
     required: false
     default: 'true'
 
+  strip-build-metadata:
+    description: >
+      When true, promote-unreleased removes the SemVer build metadata (the "+..." suffix) from the
+      version, e.g. "2.0.0-alpha2+arm" is written as "2.0.0-alpha2".
+    required: false
+    default: 'false'
+
+  strip-prerelease:
+    description: >
+      When true, promote-unreleased removes the SemVer pre-release part (the "-..." suffix) from
+      the version, e.g. "2.0.0-alpha2+arm" is written as "2.0.0+arm" (or "2.0.0" together
+      with strip-build-metadata). Pre-releases and the final release then share one label, so
+      keep skip-prerelease at "true".
+    required: false
+    default: 'false'
+
   date:
     description: Date to stamp the version section with (YYYY-MM-DD). Defaults to today (UTC).
     required: false
@@ -210,6 +226,8 @@ runs:
         INPUT_SKIP_PRERELEASE: ${{ inputs.skip-prerelease }}
         INPUT_SKIP_IF_EMPTY: ${{ inputs.skip-if-empty }}
         INPUT_KEEP_UNRELEASED: ${{ inputs.keep-unreleased }}
+        INPUT_STRIP_BUILD_METADATA: ${{ inputs.strip-build-metadata }}
+        INPUT_STRIP_PRERELEASE: ${{ inputs.strip-prerelease }}
         INPUT_DATE: ${{ inputs.date }}
         INPUT_COMMIT: ${{ inputs.commit }}
         INPUT_COMMIT_MESSAGE: ${{ inputs.commit-message }}
