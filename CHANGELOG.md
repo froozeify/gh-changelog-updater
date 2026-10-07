@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/) and this p
 
 ## [Unreleased]
 
+## [1.0.6] - 2026-10-07
+
 ### Added
 
 - Add exclusion of build/prerelease semver datas (#11)
