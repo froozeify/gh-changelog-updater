@@ -182,6 +182,15 @@ test('ensureCategory respects category-order when inserting among existing categ
 // promote-unreleased flow
 // ---------------------------------------------------------------------------
 
+test('formatVersion strips build metadata and/or pre-release independently', () => {
+  const v = '2.0.0-alpha2+arm';
+  assert.strictEqual(changelog.formatVersion(v), v);
+  assert.strictEqual(changelog.formatVersion(v, { stripBuild: true }), '2.0.0-alpha2');
+  assert.strictEqual(changelog.formatVersion(v, { stripPre: true }), '2.0.0+arm');
+  assert.strictEqual(changelog.formatVersion(v, { stripBuild: true, stripPre: true }), '2.0.0');
+  assert.strictEqual(changelog.formatVersion('1.25.0', { stripBuild: true, stripPre: true }), '1.25.0');
+});
+
 test('promote restamps [Unreleased] to a dated version section and opens a fresh one', () => {
   const parsed = changelog.parse('');
   const section = changelog.ensureUnreleased(parsed);

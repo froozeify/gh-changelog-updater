@@ -200,7 +200,17 @@ function promote(parsed, version, date, keepUnreleased) {
   return { hadContent };
 }
 
+// Optionally drops the SemVer pre-release ("-alpha2") and/or build metadata ("+arm") parts:
+// "2.0.0-alpha2+arm" -> "2.0.0-alpha2" (stripBuild), "2.0.0+arm" (stripPre), "2.0.0" (both).
+function formatVersion(version, { stripBuild = false, stripPre = false } = {}) {
+  let v = String(version || '');
+  if (stripBuild) v = v.replace(/\+.*$/, '');
+  if (stripPre) v = v.replace(/^([^-+]+)-[^+]*/, '$1');
+  return v;
+}
+
 module.exports = {
+  formatVersion,
   DEFAULT_PREAMBLE,
   parse,
   render,

@@ -217,6 +217,12 @@ async function run({ github, context, core, exec }) {
     else if (resolved.remove) applyChange = (raw) => applyRemoveUnreleased(raw, { refToken: resolved.refToken, core });
   } else if (mode === 'promote-unreleased') {
     version = stripV(env('INPUT_VERSION', releaseOrRefVersion(context)));
+    const stripBuild = boolEnv('INPUT_STRIP_BUILD_METADATA', false);
+    const stripPre = boolEnv('INPUT_STRIP_PRERELEASE', false);
+    if (stripPre && !skipPrerelease) {
+      core.warning('strip-prerelease is true while skip-prerelease is false: pre-releases and the final release would share the same version label.');
+    }
+    version = changelogLib.formatVersion(version, { stripBuild, stripPre });
     commitMessage = renderTemplate(env('INPUT_COMMIT_MESSAGE', 'ci: update changelog for {version}'), { version });
 
     if (skipPrerelease && context.payload.release && context.payload.release.prerelease) {
