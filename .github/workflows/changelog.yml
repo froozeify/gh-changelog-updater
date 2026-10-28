@@ -14,12 +14,21 @@ jobs:
     if: github.event_name == 'release' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.FROOZEIFY_APP_CLIENT_ID }}
+          private-key: ${{ secrets.FROOZEIFY_APP_PRIVATE_KEY }}
+
       - uses: actions/checkout@v7
         with:
           ref: main
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
 
       # Dogfooding: this repo IS the action, so it's referenced by local path
       # instead of `froozeify/gh-changelog-updater@v1`. mode: auto resolves
       # add-unreleased vs. promote-unreleased from the triggering event.
       - uses: ./
+        with:
+          token: ${{ steps.app-token.outputs.token }}
